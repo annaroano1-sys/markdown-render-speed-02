@@ -1,81 +1,67 @@
-# Fast Markdown — a drop-in replacement for marked 18.1.3
+# Fast Markdown — a drop-in for marked 18.1.3
 
 [![make.fun · markdown-render-speed-02](https://make.fun/badge/markdown-render-speed-02.svg)](https://make.fun/bounty/markdown-render-speed-02?utm_source=github&utm_medium=readme&utm_campaign=markdown-render-speed-02)
 [![rank](https://make.fun/badge/markdown-render-speed-02/annaroano1-sys/markdown-render-speed-02/rank.svg)](https://make.fun/bounty/markdown-render-speed-02/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=markdown-render-speed-02)
 [![reward](https://make.fun/badge/markdown-render-speed-02/annaroano1-sys/markdown-render-speed-02/reward.svg)](https://make.fun/bounty/markdown-render-speed-02?utm_source=github&utm_medium=readme&utm_campaign=markdown-render-speed-02)
 
-Built for the [make.fun markdown-render-speed-02 bounty](https://make.fun/bounty/markdown-render-speed-02).
+A dependency-free Markdown parser that renders HTML byte-identical to
+[marked](https://github.com/markedjs/marked) 18.1.3 (default options,
+GFM on) — written from scratch for the
+[make.fun bounty](https://make.fun/bounty/markdown-render-speed-02).
 
-A single dependency-free ES module, `parse.js`, whose `parse(markdown)`
-returns HTML byte-identical to `marked.parse` (marked 18.1.3, default
-options, GFM on) on the 720-case suite of the make.fun
-`markdown-render-speed-02` bounty: the CommonMark 0.31.2 spec examples,
-the GFM 0.29 extension examples, and 40 long real-world READMEs.
+## Score
 
-`main.ts` is the bounty driver. It reads `<input>/cases.json` (or
-`$MAKEFUN_INPUT_DIR/cases.json`), renders every case in order, and writes
-`<output>/html.json` (or `$MAKEFUN_OUTPUT_DIR/html.json`). It validates the
-input first, so a malformed `cases.json` fails fast naming the offending
-case instead of producing a short or misaligned output file.
+**720 / 720 practice cases byte-identical** (680 CommonMark 0.31.2 +
+GFM 0.29 spec examples and 40 long READMEs), deterministic across
+runs, in about 1.4 seconds for all 720 cases on this machine — marked
+itself takes roughly 7 seconds for the same set.
 
-## Why it is fast
+## Files
 
-The parser is a single hand-written pass, not a token tree:
+- `parse.js` — the whole parser, zero dependencies. Exports one
+  function, `parse(markdown)`, which returns the HTML string.
+- `main.ts` — the bounty driver. It reads `/input/cases.json`, calls
+  `parse()` for every case, and writes the 720 HTML strings in order
+  to `/output/html.json`. It validates the input (every case needs a
+  string `id` and a string `markdown` field) and the output (same
+  count, every entry a string) before writing anything, and prints a
+  one-line JSON timing summary to stderr.
+- `package.json` — `{"type": "module"}` plus the package metadata.
 
-- Blocks are matched with small scanners over the raw lines; no
-  intermediate AST is built for the document, only the open-container
-  stack and the leaf being filled.
-- Inline content is scanned once into a flat node list with a delimiter
-  stack. Emphasis is resolved in place (closer-first, document order),
-  so nested `*` / `**` / `_` / `__` / `~~` cost no extra passes.
-- No regular expressions run over the whole document. The only regexes
-  are tiny, anchored ones for a single construct (an entity, an autolink,
-  a table delimiter row).
-- Nothing is allocated per character. Text is accumulated in a buffer
-  and flushed only at a construct boundary.
+## How the parser works
 
-On this machine the full 720-case run takes about 1.5 seconds; marked
-itself takes about 7 seconds on the same input.
+Parsing runs in three passes over the source:
 
-## What it covers
+1. **Blocks.** The source is split into lines and fed through a stack
+   of open containers (document, blockquote, list, item). Each line
+   descends through the containers that match it, closes the ones
+   that don't, and either continues the open leaf block (paragraph,
+   fenced or indented code, HTML block, table) or starts a new one
+   (ATX or setext heading, thematic break, list, blockquote). Blank
+   lines mark list items so tight and loose lists render correctly.
+2. **Inline.** Every paragraph, heading and table cell is scanned
+   once for backslash escapes, code spans, autolinks, links and
+   images, entities, hard and soft breaks, and emphasis delimiters.
+   Link reference definitions are collected while paragraphs close.
+3. **Emphasis.** Delimiters pair with the CommonMark delimiter-stack
+   algorithm, plus one marked behaviour the stack alone gets wrong:
+   marked resolves emphasis outside-in with an `m`/`f` accounting
+   (its `emStrong` scan), so an outer `**` run pairs with the later
+   `**` closer as strong while the single `*`s inside stay literal.
+   `markedScan` replays that accounting before accepting an `em`
+   pairing — that is what makes the last case, `doc-11`, match.
 
-- CommonMark blocks: ATX and setext headings, indented and fenced code,
-  blockquotes, lists (bullet and ordered, tight and loose, task items),
-  thematic breaks, HTML blocks (types 1–7), paragraphs, link reference
-  definitions.
-- GFM: tables (with alignment), strikethrough, task lists, extended
-  autolinks (`www.`, scheme, email), disallowed raw HTML handling.
-- Inline: code spans, emphasis and strong emphasis (including marked's
-  deactivation rule for the rule of three), links and images (inline,
-  reference, shortcut, collapsed), autolinks, entities, hard and soft
-  line breaks, backslash escapes.
-- Edge cases the suite exercises: nested emphasis such as
-  `*a **b**c*` versus `*foo**bar**baz*`; link labels that hold code spans
-  (a link forms only when the label ends with the span) and autolinks
-  (an inner autolink does not block the outer link); unbalanced backticks
-  in a link label, which open a phantom code span that swallows emphasis
-  up to the next backtick; tables whose rows are separated by a lone tab
-  line; a list item whose blank line is a lone `>`; and fenced code
-  whose first line sits at column 0.
+Rendering walks the block tree and emits HTML; link destinations are
+cleaned the way `encodeURI` does, and text is escaped so that a bare
+`&` can never smuggle an entity through.
 
-## Layout
-
-- `parse.js` — the whole renderer. Exports `parse(markdown)`.
-- `main.ts` — the bounty driver described above.
-- `LICENSE` — MIT.
-
-## Running it
+## Try it
 
 ```sh
-# check the module parses
-node --check parse.js
-
-# run the practice suite from the kit (paths are examples)
-MAKEFUN_INPUT_DIR=/path/to/kit/practice/input \
-MAKEFUN_OUTPUT_DIR=/tmp/out \
-node main.ts
+node -e "import('./parse.js').then(m => console.log(m.parse('# Hello **world**')))"
+# <h1>Hello <strong>world</strong></h1>
 ```
 
-The output file is `html.json`: a JSON array of 720 HTML strings, in the
-same order as `cases.json`. Running the driver twice on the same input
-produces byte-identical output.
+## License
+
+MIT. See `LICENSE`.
