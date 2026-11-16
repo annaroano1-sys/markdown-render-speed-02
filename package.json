@@ -1,1 +1,1 @@
-{"description":"Dependency-free Markdown renderer matching marked 18.1.3 byte for byte","license":"MIT","main":"parse.js","name":"fast-markdown","type":"module","version":"1.0.0"}
+{"description":"Dependency-free Markdown renderer matching marked 18.1.3","license":"MIT","name":"fast-markdown","type":"module","version":"1.0.0"}
