@@ -7,6 +7,10 @@
 // The input and output directories come from MAKEFUN_INPUT_DIR and
 // MAKEFUN_OUTPUT_DIR when they are set (local testing), and default to
 // /input and /output (the harness paths).
+//
+// The driver validates its input before rendering so a malformed
+// cases.json fails fast with the offending case named, instead of
+// producing a short or misaligned html.json.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,11 +20,24 @@ const inputDir: string = process.env.MAKEFUN_INPUT_DIR ?? '/input';
 const outputDir: string = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 const raw: string = readFileSync(join(inputDir, 'cases.json'), 'utf8');
-const cases: { id: string; markdown: string }[] = JSON.parse(raw);
+const parsed: unknown = JSON.parse(raw);
+if (!Array.isArray(parsed)) {
+  throw new Error('cases.json must hold a JSON array of cases, got ' + typeof parsed);
+}
+const cases: { id: string; markdown: string }[] = parsed as { id: string; markdown: string }[];
 
 const html: string[] = new Array(cases.length);
 for (let i = 0; i < cases.length; i++) {
-  html[i] = parse(cases[i].markdown);
+  const c = cases[i];
+  if (!c || typeof c !== 'object' || typeof c.markdown !== 'string') {
+    throw new Error(
+      'case at index ' + i + ' has no string markdown field' +
+      (c && typeof c === 'object' && typeof (c as { id?: unknown }).id === 'string'
+        ? ' (id ' + (c as { id: string }).id + ')'
+        : ''),
+    );
+  }
+  html[i] = parse(c.markdown);
 }
 
 mkdirSync(outputDir, { recursive: true });
